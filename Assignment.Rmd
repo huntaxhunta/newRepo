@@ -1,0 +1,630 @@
+---
+title: "COMP1013 Analytic Programming AUT23"
+author: 'Jianwen Yang # 20753014'
+date: "2023-05-08"
+output:
+  pdf_document:
+    latex_engine: lualatex
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+library("tidyverse")
+library("ggplot2")
+library("knitr")
+```
+
+By including this statement, we the authors of this work, verify that:
+
+-   We hold a copy of this assignment that we can produce if the original is lost or damaged.
+-   We hereby certify that no part of this assignment/product has been copied from any other student's work or from any other source except where due acknowledgement is made in the assignment.
+-   No part of this assignment/product has been written/produced for us by another person except where such collaboration has been authorized by the subject lecturer/tutor concerned.
+-   We are aware that this work may be reproduced and submitted to plagiarism detection software programs for the purpose of detecting possible plagiarism (**which may retain a copy on its database for future plagiarism checking**).
+-   We here by certify that we have read and understand what the School of Computing, Engineering and Mathematics defines as minor and substantial breaches of misconduct as outlined in the learning guide for this unit.
+
+# 1. Write code to compute total revenue of each store.
+
+**Loading The data**
+
+```{r}
+sales <- read.csv("sales_ug.csv")
+```
+
+**Create a function to calculate revenue**
+
+```{r}
+calculateRevenue <- function(d, Id){
+  # create subset of a store
+  set1 = subset(sales, subset = (store_id == Id))
+  # find data of a specific date
+  set2 = subset(set1, subset = (date == d))
+  # calculate the sum of revenue
+  sum = sum(set2$revenue)
+  return(sum)
+}
+```
+
+**Testing the code**
+
+```{r}
+# use tidyverse library to calculate revenue of shop S0001 at 2017-07-03
+sales %>% filter(store_id == "S0001") %>% # extract result of shop S0001
+  filter(date == "2017-07-03") %>% # find data of 07-03 only
+  pull("revenue") %>% # extract revenue data
+  sum(na.rm = TRUE) # add the results
+# Use my function calculateRevenue to find total revenue of S0001 at 2017-07-03
+calculateRevenue(d = "2017-07-03", Id = "S0001")
+```
+The result of my function match the result from piping through tidyverse. My function had successfully calculated required result.
+
+## Create a matrix to store the revenue results
+
+```{r}
+revenue <- matrix(rep(0),
+                  # number of rows by store_id
+                  nrow = length(unique(sales$store_id)),
+                  # number of columns by date
+                  ncol = length(unique(sales$date)),
+                  # specify row and column names from sales data
+                  dimnames = list(c(unique(sales$store_id)), c(unique(sales$date))))
+```
+
+**Use the function calculateRevenue to store data in the matrix**
+
+```{r}
+# Use a for loop inside a for loop to overwrite the matrix
+for (i in unique(sales$store_id)) {
+    for (j in unique(sales$date)) {
+      # overwrite by row i and column j 
+      revenue[i,j] = calculateRevenue(j,i) 
+    }
+}
+# Sort data by ascending order of row names.
+revenue <- revenue[sort(rownames(revenue)),]
+kable(revenue[1:5,])
+```
+
+The revenue for each store differ significantly.
+
+**Remove results where there are 0 revenue**
+
+```{r}
+naId <- which(revenue[,1] == 0) # locate 0 revenue id
+revenue <- revenue[-naId,] # remove unwanted results
+```
+
+## Create a new matrix to store revenue by percentage.
+
+```{r}
+revenue_percentage <- matrix(rep(0),
+                  # number of rows
+                  nrow = length(revenue[,1]),
+                  # number of columns
+                  ncol = length(revenue[1,]),
+                  # specify row and column names from revenue data
+                  dimnames = list(c(rownames(revenue)),
+                                  c(colnames(revenue))))
+# store percentage data into the matrix
+for (i in 1:length(revenue_percentage[,1])) {
+  # divide the value of each shop by total revenue of the weeks
+  revenue_percentage[i,] = revenue[i,] / sum(revenue[i,])
+}
+kable(revenue_percentage[1:5,])
+```
+
+The table shows the revenue percentage of each day for first 5 stores.
+
+## Use the revenue_percentage data to visualize my results
+
+```{r}
+barplot(revenue_percentage,
+        main = "Revenue by percentage", 
+        xlab = "Days",
+        ylab = "Stacked percentage of each days")
+```
+
+The revenue figure of each store differ significantly, possibly because each store are different in size. Instead of making a bar plot of the revenue figure I have calculated the revenue percentage of each store by each day. The plot above shows the revenue percentage stacked for each day, the revenue on weekend seems to be higher compare to weekdays.
+
+## Additional analysis
+
+I am not convinced by the bar plot that weekend revenue are higher. Running chi square test on all the stores to see whether there is a difference in daily revenue.
+
+**H0** : There is no difference in daily revenue.
+
+**HA** : There is a difference in daily revenue.
+
+**Testing codes**
+```{r}
+chisq.test(revenue[1,], simulate.p.value = TRUE)
+```
+P value is small, reject null hypothesis. There is a difference in daily revenue for store 1.
+
+```{r}
+# create a df for chisq test
+revenue_chi <- as.data.frame(revenue)
+# run chisq test on all 125 stores
+for (i in 1:length(revenue[,1])) {
+  revenue_chi$chi[i] = chisq.test(revenue[i,])[3][[1]]# using bracket to extract only the p value.
+}
+kable(revenue_chi[1:5,])
+```
+
+The first 5 stores all have small p values, use ggplot to show the p value for all stores.
+
+```{r}
+ggplot(revenue_chi) +
+  geom_histogram(aes(chi)) +
+  labs(title = "P value by Chisq test", x = "P value", y = "Counts")
+```
+
+The p value of all stores are very small. Reject null hypothesis, there is a difference in daily revenue. 
+
+## Calculate total revenue.
+
+```{r}
+revenue_df <- as.data.frame(revenue) # create a data frame from revenue data
+# Use a for loop to add a column to the data frame to store total revenue of the week
+for (i in 1:length(revenue[,1])) {
+  revenue_df$total[i] = sum(revenue[i,])
+}
+revenue_df$id <- rownames(revenue_df)
+kable(revenue_df[1:5,])
+```
+
+Once again, the weekly revenue of each store differ significantly.
+
+```{r}
+# Use ggplot to draw the spread of revenues among the shops. 
+ggplot(revenue_df) +
+  geom_boxplot(aes(total), bins = 15)+
+  labs(title = "Weekly revenue of shops", x = "Revenue", y = "Count")
+```
+
+The histogram shows the weekly revenue for all the stores, majority of the shops' revenue are below 3000 per week.
+
+# 2. Find the most popular product type.
+
+**Loading the data**
+
+```{r}
+# Read the relative csv file
+hierarchy <- read.csv("product_hierarchy.csv")
+# join the data with sales data
+hierarchy <- sales %>%
+  full_join(hierarchy, by = "product_id")
+```
+
+## Find the most popular product type and calculate the revenue
+```{r}
+# find number of product type
+popId <- unique(hierarchy$hierarchy1_id)
+# create an empty data frame
+popProduct <- data.frame(product_type = popId,
+                         sales = c(rep(0, length(popId))),
+                         revenue = c(rep(0, length(popId))))
+```
+
+**Test the codes**
+
+```{r}
+# use subset function to pull required data
+testDf <- subset(hierarchy, hierarchy1_id == popId[1])
+# calculate the sum of sales quantity in testDf
+sum(testDf$sales, na.rm = TRUE)
+
+# Use tidyverse to calculate the sum
+hierarchy %>%
+    # filter by each type
+    filter(hierarchy1_id == popId[1]) %>% 
+    # extract sales quantity then add them up
+    pull(sales) %>% sum(na.rm = TRUE)
+```
+The sum calculated by using subset and sum the column is equal to the sum calculated from tidyverse. I can use the piping codes to calculate sum of sales quantity and revenue for each product type.
+
+```{r}
+# Use a for loop to insert sales quantity
+for (i in 1:length(popId)) {
+  # pipe through df
+  popProduct$sales[i] <- hierarchy %>%
+    # filter by each type
+    filter(hierarchy1_id == popId[i]) %>% 
+    # extract sales quantity
+    pull(sales) %>%
+    # add them up
+    sum(na.rm = TRUE)
+  popProduct$revenue[i] <- hierarchy %>%
+    # filter by each type
+    filter(hierarchy1_id == popId[i]) %>% 
+    # extract revenue
+    pull(revenue) %>%
+    # add them up
+    sum(na.rm = TRUE)
+}
+```
+
+**Provide a table that shows the product type ranked from most to least popular then plot the data.**
+
+```{r}
+kable(popProduct[order(popProduct$sales, decreasing = TRUE),]) # order the table by sales quantity
+ggplot(popProduct) +
+  geom_col(aes(product_type, sales, fill = product_type)) +
+  labs(title = "Most popular product type", x = "Product type", 
+       y = "Count", fill = "Product type")
+```
+
+The most popular product type is H00, the sales quantity is more than twice of the others add up.
+
+**Plot the revenue of each product**
+```{r}
+ggplot(popProduct) +
+  geom_col(aes(product_type, revenue, fill = sales)) +
+  labs(title = "Most popular product type", x = "Product type", 
+       y = "Revenue", fill = "Sales quantity")
+```
+
+It is not surprising that product type H00 generated the most revenue. However it is interesting to see that the revenue of type H01 and H03 are not far behind H00 considering they both have much lower sales quantity. Type H01 and H03 might have higher product price compare to H00.
+
+## Additional analysis
+
+I want to run t test on the price per unit between type H00 and H01 to see if type H01 have a higher product price.
+
+**H0** : There is no difference in mean price between H00 and H01
+
+**HA** : Type H01 has higher mean price
+
+```{r}
+popT <- hierarchy %>% 
+  # keep only type H00 and H01 data
+  filter(hierarchy1_id == "H00" | hierarchy1_id == "H01") %>%
+  # select relevant columns
+  select(hierarchy1_id,sales, revenue) %>%
+  # remove rows with 0 sales or revenue
+  filter(sales != 0 & revenue !=0) %>%
+  # calculate price by dividing revenue by sales quantity
+  mutate(price = revenue/sales)
+# Run the t test, alternative hypothesis for type H00 less than H01, 
+t.test(price~hierarchy1_id, popT, alternative = "less")
+```
+
+P value is small, reject null hypothesis. There is strong evidence that products in type H01 have higher price.
+
+## How many sub types are there?
+
+**Test the codes**
+
+```{r}
+# pull sub product type ids
+testType <- hierarchy[,c("hierarchy1_id", "hierarchy2_id")]
+testType <- unique(testType)
+# use unique function to remove repeated entry
+testType[order(testType$hierarchy2_id),]
+# use tidyverse to extract each unique sub product type 
+hierarchy %>%
+  # select main type and sub type
+  select(hierarchy1_id, hierarchy2_id) %>%
+  # subtract repeated rows and sort
+  unique() %>% arrange(hierarchy2_id)
+```
+Both built in function and tidyverse are producing same list of unique sub product type. I can use the tidyverse codes to extract required data. 
+
+```{r}
+# pipe through df to find number of sub types
+sub <- hierarchy %>%
+  # select main type and sub type
+  select(hierarchy1_id, hierarchy2_id) %>%
+  # subtract repeated rows and sort
+  unique() %>% arrange(hierarchy2_id)
+```
+
+## Calculate the number of products, sales quantity and revenue generated.
+
+**Test the code**
+
+```{r}
+# pipe through df and filter by first sub type
+hierarchy %>% filter(hierarchy2_id == sub$hierarchy2_id[1]) %>%
+  # extract the products and count number of unique products
+  pull(product_id) %>% unique %>% length()
+# extract the subset of first sub type
+testDf <- subset(hierarchy, hierarchy2_id == sub$hierarchy2_id[1])
+# count number of unique products
+length(unique(testDf$product_id))
+```
+Both built in function and tidyverse are giving same number of unique products for first sub type. I can use the codes to calculate number of unique products for each sub type.
+
+```{r}
+for (i in 1:length(sub$hierarchy2_id)) {
+  # number of unique products 
+  sub$products[i] <- hierarchy %>%
+    # filter by the sub type
+    filter(hierarchy2_id == sub$hierarchy2_id[i]) %>%
+    # extract product_id into a vector
+    pull(product_id) %>%
+    # sort how many different products
+    unique() %>%
+    # use length function to count number of unique products
+    length()
+  # sales quantity by codes from previous part
+  sub$sales_count[i] <- hierarchy %>%
+    # filter by the sub type
+    filter(hierarchy2_id == sub$hierarchy2_id[i]) %>%
+    # extract sales quantity into a vector
+    pull(sales) %>%
+    # sum the results
+    sum(na.rm = TRUE)
+  # revenue generated by codes from previous part
+  sub$revenue[i] <- hierarchy %>%
+    # filter by the sub type
+    filter(hierarchy2_id == sub$hierarchy2_id[i]) %>%
+    # extract revenue into a vectory
+    pull(revenue) %>%
+    # sum the results
+    sum(na.rm = TRUE)
+}
+```
+
+**Visualization**
+```{r}
+kable(sub)
+ggplot(sub) +
+  geom_col(aes(revenue, hierarchy2_id, fill = sales_count)) +
+  labs(title = "Number of sub types by sales count and revenue",
+       x = "Revenue generated", y = "Sub types", fill = "Sales counts")
+```
+
+The table shows the number of sub types order by type id, for each sub types we have included the sales quantity, number of products and revenue generated during the week. The graph shows that sub type H0000 has the higher revenue and H0003 has the highest sales quantity.
+
+# 3. Compare the store types
+
+**Load the data**
+```{r}
+stores <- read.csv("store_cities.csv")
+stores <- stores %>%
+  full_join(sales, by = "store_id")
+```
+
+## Find the two most common store type
+
+**Test the codes**
+```{r}
+stores %>%
+  # extract only store types and store id 
+  select(storetype_id, store_id) %>% 
+  # use table to count number of stores by store type
+  select(storetype_id) %>% table()
+
+testDf <- stores[,c("storetype_id","store_id")]
+# use table function to count number of stores fot each store type
+table(testDf$storetype_id)
+```
+
+Both built in function and tidyverse are producing same number of store types. I can use the codes to calculate number of stores for each store type.
+
+```{r}
+# pipe through df
+commonType <- stores %>%
+  # extract only store types and store id 
+  select(storetype_id, store_id) %>% 
+  # use table to count number of stores by store type
+  select(storetype_id) %>% table()
+kable(commonType)
+```
+
+The most common type is ST04, the second most common type is ST03.
+
+## Calculate sales volume, mean store size and revenue for each store type
+
+```{r}
+# create a df to store the 2 most popular store type
+sType <- as.data.frame(commonType[3:4])
+
+# use a for loop to insert sales volume and revenue into the df
+for (i in 1:length(sType$storetype_id)) {
+  # use similar codes from previous part to calculate required values
+  # mean store size 
+  sType$store_size[i] = stores %>%
+    # filter by store type
+    filter(storetype_id == sType$storetype_id[i]) %>%
+    # select store id and store size
+    select(store_id, store_size) %>%
+    # eliminate repeated stores
+    unique() %>%
+    # extract store size by each stores and find the mean
+    pull(store_size) %>% mean()
+  # sales volume
+  sType$sales_volume[i] = stores %>%
+    # filter by store type
+    filter(storetype_id == sType$storetype_id[i]) %>%
+    # extract sales quantity and sum 
+    pull(sales) %>% sum(na.rm = TRUE)
+  # revenue
+  sType$revenue[i] = stores %>%
+    # filter by store type
+    filter(storetype_id == sType$storetype_id[i]) %>%
+    # extract revenue and sum 
+    pull(revenue) %>% sum(na.rm = TRUE)
+}
+kable(sType)
+```
+
+From the table we can see that ST04 has much higher store count, sales volume and revenue compare to ST03.
+
+**Visualize the data**
+```{r}
+ggplot(sType) +
+  geom_col(aes(storetype_id, revenue, fill = sales_volume)) +
+  labs(title = "Revenue by store type", x = "Store type",
+       y = "Revenue", fill = "Sales_volume")
+```
+
+## Is there a relationship between the store size and revenue
+
+```{r}
+# Use similar codes from previous part to create a df
+# to show store size data by each stores
+storeSize <- stores %>%
+  # select relevant column
+  select(store_id, store_size) %>%
+  # remove repeated rows and arrange by store_id 
+  unique() %>% arrange(store_id)
+# use a for loop to insert revenue data
+for (i in 1:length(storeSize$store_id)) {
+  # use similar codes from previous to calculate revenue for each store_id
+  storeSize$revenue[i] = stores %>%
+    # filter by store id 
+    filter(store_id == storeSize$store_id[i]) %>%
+    # extract revenue data and sum with na remove
+    pull(revenue) %>% sum(na.rm = TRUE)
+}
+kable(storeSize[1:6,])
+```
+
+It is not easy to see the relationship by looking at the table.
+
+**Visualization **
+```{r}
+ggplot(storeSize, aes(store_size, revenue)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(title = "Revenue of stores by store size",
+       x = "Store size", y = "Revenue")
+```
+
+The plot shows a strong relationship between a store's size and its revenue, the bigger the store size the higher the revenue.
+
+## Additional analysis
+
+I want to calculate the correlation coefficient then run a dummy simulation and see how likely is it to obtain such coefficient by chance.
+
+
+```{r}
+corSize <- cor(storeSize$store_size, storeSize$revenue) # cor coefficient 
+x <- replicate(1000,{
+  # shuffle the store size 
+  p <- sample(storeSize$store_size) 
+  # calculate the correlation between the shuffled store size 
+  # and original revenue data
+  cor(p, storeSize$revenue)  
+})
+print(paste("Sample correlation coefficient is", corSize,".")) # original correlation coefficient
+pVal <- sum(abs(x) > corSize) / 1000 # number of results that exceed the original coefficient
+print(paste("Number of simulated coefficient greater than original are", pVal,"."))
+```
+
+The correlation coefficient `r corSize` is indicating a strong relationship between the store size and revenue generated. The p value from simulation is 0, it's not likely such correlation occur by chance.
+
+**Mean store size for ST03 and ST04**
+
+```{r}
+ggplot(sType) +
+  geom_col(aes(storetype_id, store_size, fill = revenue)) +
+  labs(title = "Average store size for type ST03 and ST04",
+       x = "Store type", y = "Mean store size", fill = "Revenue")
+```
+
+The average store size of ST04 is twice as the size of ST03, this is another reasons why ST04 has a higher total revenue.
+
+# 4. Promotion and sales
+
+**Load the data**
+```{r}
+# use similar codes from previous part to create a df
+# to show the number of promotion type and promotion rate for each type
+promotion <- sales %>%
+  # select the relevant column
+  select(promo_type_1, promo_bin_1) %>%
+  # remove repeated rows
+  unique() %>% arrange(promo_type_1)
+kable(promotion)
+```
+
+## For each promotion rate calculate its sales quantity
+**Test the codes**
+```{r}
+sales %>%
+    # filter first promotion rate of first promotion type
+    filter(promo_type_1 == promotion$promo_type_1[1] & promo_bin_1 == promotion$promo_bin_1[1]) %>%
+    # extract sales quantity data and sum it
+    pull(sales) %>% sum(na.rm = TRUE)
+# subset the first promotion rate of first promotion type
+testDf <- subset(sales, promo_type_1 == promotion$promo_type_1[1] & promo_bin_1 == promotion$promo_bin_1[1])
+# sum the sales quantity
+sum(testDf$sales, na.rm = TRUE)
+```
+Both built in function and tidyverse are producing same output, I can use the code to calculate sales quantity of each promotion rate.
+
+```{r}
+# use a for loop to insert sales quantity data
+for (i in 1:length(promotion$promo_bin_1)) {
+  # pipe through sales df
+  promotion$sales[i] <- sales %>%
+    # filter by promotion type and promotion rate
+    filter(promo_type_1 == promotion$promo_type_1[i]
+           & promo_bin_1 == promotion$promo_bin_1[i]) %>%
+    # extract sales quantity data and sum it
+    pull(sales) %>% sum(na.rm = TRUE)
+}
+kable(promotion)
+```
+
+promotion type PR14 has a large sales count with no promotion rate. It's most likely the sales with no promotion rate applied, remove from the table.
+
+```{r}
+# remove unwanted row
+promotion <- head(promotion, -1)
+kable(promotion)
+```
+
+The most successful promotion type is PR12 then PR09 and PR08, the other promotions types are not effective.
+
+**Visualization**
+```{r}
+ggplot(promotion, aes(promo_bin_1, sales)) +
+  geom_col(aes(fill = promo_bin_1)) +
+  facet_wrap(~promo_type_1, nrow = 4) +
+  labs(title = "Sales quantity by promotion rate", x = "Promotion rate",
+       y = "Sales quantity", fill = "Promotion rate") +
+  coord_flip()
+```
+
+## Effectiveness by promotion rate
+```{r}
+# use similar codes from previous to create a df of each promotion rate.
+promoRate <- sales %>%
+  # select only the different promotion rate
+  select(promo_bin_1) %>%
+  # remove repeated rows
+  unique() %>% arrange(promo_bin_1)
+# use a for loop to calculate sales quantity for each promotion rate
+for (i in 1:length(promoRate$promo_bin_1)) {
+  # use similar codes from previous part  
+  # to calculate sales quantity for each promotion rate
+  promoRate$sales[i] = sales %>%
+    # filter by promotion rate
+    filter(promo_bin_1 == promoRate$promo_bin_1[i]) %>%
+    # extract sales quantity data and sum it.
+    pull(sales) %>% sum(na.rm = TRUE)
+}
+kable(promoRate)
+```
+
+Again first row shows the sales without any promotion, remove from the table.
+
+```{r}
+# remove unwanted row
+promoRate <- tail(promoRate, -1)
+kable(promoRate)
+```
+
+The most successful promotion rate is very high then low then very low. It is interesting to see that high and moderate promotion rate are less effective compare to low and very low, we should gather more data to identify why this is happening.
+
+**Visualization**
+```{R}
+ggplot(promoRate,aes(promo_bin_1, sales)) +
+  geom_col(aes(fill = promo_bin_1)) +
+  labs(title = "Sales quantity by promotion rate", x = "Promotion rate",
+       y = "Sales quantity", fill = "Promotion rate")
+```
+

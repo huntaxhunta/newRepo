@@ -14,7 +14,8 @@ julyDec <- subset(covid, date > "2020-07-01" & date < "2020-12-31")
 g <- ggplot(julyDec) +
 	  geom_line(aes(date, H, col = "red")) +
 	  scale_x_date(breaks = "month",date_minor_breaks = "week",
-		      date_labels = "%B") + 
+		      date_labels = "%B") +
+	  scale_y_log10()+
 	  labs(title = "hostpital bed between July and December",
 		        x = "date", y = "Hospital bed count")
 

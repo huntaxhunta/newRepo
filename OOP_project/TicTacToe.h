@@ -90,7 +90,10 @@ bool TicTacToe::getXOMove(int &x, int &y) {//What does & mean?
 }
 
 void TicTacToe::addMove(int x, int y, int player) {//What is this function for?
-	//
+	/* change the board according to the given x and y position
+	 * assign the value according to the current player
+	 * 1 for player X and -1 for player O
+	 */
 	board[x][y] = player;
 }
 
